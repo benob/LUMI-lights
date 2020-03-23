@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <script src="https://cdn.jsdelivr.net/npm/webmidi"></script>
+    <script src="lumi_sysex.js"></script>
+  </head>
+  <body>
+    <h1> LUMI sysex commands </h1>
+    <form>
+      <p>
+        <input type="color" id="color1" value="#ff0000" oninput="change_color1()">
+        <input type="color" id="color2" value="#0000ff" oninput="change_color2()">
+      </p>
+
+  <p>
+    <label for="brightness">Brightness</label>
+    <input id="brightness" type="range" value="100" min="0" max="100" oninput="set_brightness(brightness_value.value = brightness.value)"> 
+    <output id="brightness_value" for="brightness">100</output>
+  </p>
+
+  <p>
+    <label for="channel">Channel</label>
+    <input id="channel" type="range" value="0" min="0" max="127" oninput="set_channel(channel_value.value = channel.value)"> 
+    <output id="channel_value" for="channel">0</output> 
+  </p>
+
+  <p> 
+    <label for="octave">Octave</label>
+    <input id="octave" type="range" value="0" min="-4" max="5" oninput="set_octave(octave_value.value = octave.value)"> 
+    <output id="octave_value" for="octave">0</output> 
+  </p>
+
+  <p>
+    <label for="transpose">Transpose</label>
+    <input id="transpose" type="range" value="0" min="-11" max="11" oninput="set_transpose(transpose_value.value = transpose.value)">
+    <output id="transpose_value" for="transpose">0</output>
+  </p>
+
+  <p>
+    <label for="strike">Strike sensitivity</label>
+    <input id="strike" type="range" value="127" min="0" max="127" oninput="set_strike_sensitivity(strike_value.value = strike.value)">
+    <output id="strike_value" for="strike">127</output>
+  </p>
+
+  <p>
+    <label for="sensitivity">Sensitivity</label>
+    <input id="sensitivity" type="range" value="127" min="0" max="127" oninput="set_sensitivity(sensitivity_value.value = sensitivity.value)">
+    <output id="sensitivity_value" for="sensitivity">127</output>
+  </p>
+
+  <p>
+    <label for="fixed_velocity">Fixed velocity</label> 
+    <input id="fixed_velocity" type="checkbox" oninput="set_fixed_velocity(fixed_velocity.checked)">
+  </p>
+
+  <p>
+    <label for="fixed_velocity">Fixed velocity value</label>
+    <input id="fixed_velocity" type="range" value="127" min="0" max="127" oninput="set_fixed_velocity_value(fixed_velocity_value.value = fixed_velocity.value)">
+    <output id="fixed_velocity_value" for="fixed_velocity">0</output>
+  </p>
+
+  <p>
+    <label for="color_mode">Color mode</label>
+    <select id="color_mode" oninput="set_color_mode(color_mode.value)">
+      <option value="0">Rainbow</option>
+      <option value="1">Single color scale</option>
+      <option value="2">Piano</option>
+      <option value="3">Night</option>
+    </select>
+  </p>
+
+  <p>
+    <label for="scale">TODO: Scale</label>
+    <select id="scale" oninput="set_scale(scale.value)">>
+      <option value="0">Major</option>
+      <option value="0">Minor</option>
+      <option value="0">Harmonic minor</option>
+      <option value="0">Pentatonic neutral</option>
+      <option value="0">Pentatonic major</option>
+      <option value="0">Pentatonic minor</option>
+      <option value="0">Blues</option>
+      <option value="0">Dorian</option>
+      <option value="0">Phrygian</option>
+      <option value="0">Lydian</option>
+      <option value="0">Mixolydian</option>
+      <option value="0">Locrian</option>
+      <option value="0">Whole tone</option>
+      <option value="0">Arabic (A)</option>
+      <option value="0">Arabic (B)</option>
+      <option value="0">Japanese</option>
+      <option value="0">Ryukyu</option>
+      <option value="0">8-tone spanish</option>
+      <option value="0">Chromatic</option>
+    </select>
+  </p>
+
+  <p>
+    <label for="key">TODO: Key</label>
+    <select id="key" oninput="set_key(event.target.value)">
+      <option value="C">C</option>
+      <option value="C#">C#</option>
+      <option value="D">D</option>
+      <option value="D#">D#</option>
+      <option value="E">E</option>
+      <option value="F">F</option>
+      <option value="F#">F#</option>
+      <option value="G">G</option>
+      <option value="G#">G#</option>
+      <option value="A">A</option>
+      <option value="A#">A#</option>
+      <option value="B">B</option>
+    </select>
+  </p>
+
+  <p>
+    <label for="pressure_tracking_mode">TODO: Pressure tracking mode</label>
+    <select id="pressure_tracking_mode" oninput="set_pressure_tracking_mode(pressure_tracking_mode.value)">
+      <option value="0"> Poly aftertouch </option>
+      <option value="1"> Channel pressure </option>
+    </select>
+  </p>
+
+  <p>
+    Custom command: F0 00 21 10 77 37 <input type="text" id="command"> <span id="checksum">??</span> F7 <button onclick="start(command.value)">Run</button>
+  </p>
+
+  <p id="logs" style="color: red"></p>
+</form>
+<script>
+
+  function log(message) {
+    console.log(message);
+    var element = document.getElementById('logs');
+    element.appendChild(document.createTextNode(message));
+    element.appendChild(document.createElement('br'));
+  }
+
+  WebMidi.enable(function (err) {
+
+  if (err) {
+    log('ERROR: could not enable WebMidi. Use a webmidi-enabled browser such as chrome and allow it to use midi. Then refresh this page');
+  } else {
+    log("WebMidi enabled!");
+    if(WebMidi.outputs.length == 0 || WebMidi.inputs.length == 0)
+      log('ERROR: no midi device detected. Make sure your LUMI register as the 2nd device (input[1] and output[1])).');
+    var input = WebMidi.inputs[1];
+    input.addListener('sysex', 'all', (event) => {
+      log('Recieved: ' + event.timestamp + ' ' + event.data.map((value) => value.toString(16).toUpperCase()).join(' '));
+    });
+  }
+  
+  }, true);
+
+  function run_command() {
+    var output = WebMidi.outputs[1];
+    var data = document.getElementById('data');
+    var values = data.value.split(' ').map((text) => parseInt(text, 16));
+    values = [0x77, 0x37].concat(values).concat(checksum(values));
+    log('RUN COMMAND ' + values.map((e) => e.toString(16)).join(' '));
+    output.sendSysex([0x00, 0x21, 0x10], values);
+  }
+
+  function change_color1() {
+    var value = parseInt(document.getElementById("color1").value.replace('#', ''), 16);
+    set_color(0, (value & 0xff0000) >> 16, (value & 0xff00) >> 8, value & 0xff);
+  }
+
+  function change_color2() {
+    var value = parseInt(document.getElementById("color2").value.replace('#', ''), 16);
+    set_color(1, (value & 0xff0000) >> 16, (value & 0xff00) >> 8, value & 0xff);
+  }
+
+</script>
+  </body>
+</html>

@@ -1,0 +1,561 @@
+/*
+<metadata description="Lightkey default" target="LUMI Keys" tags="Default;MIDI;Controller;" insertModes="false">
+
+</metadata>
+*/
+
+const int configItemId_midiStartChannel = 0;
+const int configItemId_midiEndChannel = 1;
+const int configItemId_midiUseMPE = 2;
+const int configItemId_octave = 4;
+const int configItemId_transpose = 5;
+const int configItemId_octaveTopology = 8;
+const int configItemId_midiChannelRange = 9;
+const int configItemId_mode = 20;
+const int configItemId_scale = 22;
+const int configItemId_rootKey = 27;
+const int configItemId_zTrackingMode = 32;
+const int configItemId_globalKeyColour = 34;
+const int configItemId_rootKeyColour = 35;
+const int configItemId_brightness = 36;
+
+const int numKeys = 24;
+
+int topOctaveShift;
+int clusterWidthLast;
+int xPos;
+int currentOctave;
+int currentMode;
+int currentScale;
+int currentKey;
+int minOctave;
+int maxOctave;
+
+int currentPhysicalKeyColour;
+int currentGlobalKeyColour;
+float currentGlobalBrightness;
+const int colourLookup[128];
+
+int channel[numKeys];
+
+//========
+// KeyLed Structure(ish) - littlefoot doesn't have structures
+const int KeyLed_pressed = 0;           // KeyLed[keyIndex][KeyLed_pressed] : if physically pressed, this value will contain the current press value, otherwise 0
+const int KeyLed_virtual = 1;           // KeyLed[keyIndex][KeyLed_virtual] : if a key is virtually pressed, this value will contain the colour to display, otherwise 0
+const int KeyLed_default = 2;           // KeyLed[keyIndex][KeyLed_default] : should contain the colour to display when not pressed
+const int KeyLed_brightness = 3;        // KeyLed[keyIndex][KeyLed_brightness] : should contain the current brightness level
+const int KeyLed_numComponents = 4;
+int KeyLed[numKeys][KeyLed_numComponents];
+//========
+
+int scaleBitmask;
+
+const int maxMode = 3;
+
+//==============================================================================
+void repaint()
+{
+    if (currentOctave != getLocalConfig (configItemId_octave))
+    {
+        currentOctave = getLocalConfig (configItemId_octave);
+        sendConfigItemToCluster (configItemId_octave);
+    }
+
+    if (currentMode != getLocalConfig (configItemId_mode))
+    {
+        currentMode = getLocalConfig (configItemId_mode);
+        sendConfigItemToCluster (configItemId_mode);
+        checkAndModifyKeyHandlerForMode();
+    }
+
+    if (currentScale != getLocalConfig (configItemId_scale))
+    {
+        currentScale = getLocalConfig (configItemId_scale);
+        sendConfigItemToCluster (configItemId_scale);
+        scaleBitmask = getScaleBitmask (currentScale);
+    }
+
+    if (currentKey != getLocalConfig (configItemId_rootKey))
+    {
+        currentKey = getLocalConfig (configItemId_rootKey);
+        sendConfigItemToCluster (configItemId_rootKey);
+    }
+
+    updateTopologyShift();
+    clearDisplay();
+    setDefaultColoursBasedOnScale();
+    displayOctaveButtons();
+    displayKeys();
+}
+
+//==============================================================================
+void configSyncCluster()
+{
+    if (getNumBlocksInCurrentCluster() < 2)
+        return;
+
+    for (int i = 0; i < getNumBlocksInCurrentCluster(); ++i)
+    {
+        int blockID = getBlockIdForBlockInCluster(i);
+
+        if (blockID != getBlockIDForIndex(0))
+        {
+            setRemoteConfig (blockID, configItemId_midiStartChannel, getLocalConfig (configItemId_midiStartChannel));
+            setRemoteConfig (blockID, configItemId_midiEndChannel, getLocalConfig (configItemId_midiEndChannel));
+            setRemoteConfig (blockID, configItemId_midiUseMPE, getLocalConfig (configItemId_midiUseMPE));
+            setRemoteConfig (blockID, configItemId_octave, getLocalConfig (configItemId_octave));
+            setRemoteConfig (blockID, configItemId_transpose, getLocalConfig (configItemId_transpose));
+            setRemoteConfig (blockID, 10, getLocalConfig (10));
+            setRemoteConfig (blockID, 13, getLocalConfig (13));
+            setRemoteConfig (blockID, 14, getLocalConfig (14));
+            setRemoteConfig (blockID, configItemId_mode, getLocalConfig (configItemId_mode));
+            setRemoteConfig (blockID, configItemId_scale, getLocalConfig (configItemId_scale));
+            setRemoteConfig (blockID, 24, getLocalConfig (24));
+            setRemoteConfig (blockID, 25, getLocalConfig (25));
+            setRemoteConfig (blockID, configItemId_rootKey, getLocalConfig (configItemId_rootKey));
+            setRemoteConfig (blockID, configItemId_midiChannelRange, getLocalConfig (configItemId_midiChannelRange));
+            setRemoteConfig (blockID, configItemId_globalKeyColour, getLocalConfig (configItemId_globalKeyColour));
+            setRemoteConfig (blockID, configItemId_rootKeyColour, getLocalConfig (configItemId_rootKeyColour));
+        }
+    }
+}
+
+void sendConfigItemToCluster (int itemId)
+{
+    if (getClusterWidth() < 2)
+        return;
+
+    int numBlocksInCluster = getNumBlocksInCurrentCluster();
+
+    for (int i = 0; i < numBlocksInCluster; ++i)
+        setRemoteConfig (getBlockIdForBlockInCluster(i), itemId, getLocalConfig (itemId));
+}
+
+void updateTopologyShift ()
+{
+    if (getClusterWidth() > 1)
+    {
+        int newTopOct = 0;
+
+        int octStart = ((getClusterWidth() - 1) / 2);
+        newTopOct = (getClusterXpos() - octStart) * 2;
+
+        if (topOctaveShift != newTopOct)
+        {
+            topOctaveShift = newTopOct;
+            setLocalConfig (8, topOctaveShift);
+        }
+
+        // Sync topology in cluster from master if in cluster, if not use left most unit
+        if ((! getClusterXpos() && ! isMasterInCurrentCluster()) || (isMasterInCurrentCluster() && isMasterBlock()))
+		{
+			if (clusterWidthLast != getClusterWidth() || xPos != getClusterXpos())
+			{
+				clusterWidthLast = getClusterWidth();
+				configSyncCluster();
+			}
+		}
+
+		xPos = getClusterXpos();
+    }
+    else if (topOctaveShift != 0)
+    {
+        topOctaveShift = 0;
+        setLocalConfig (8, topOctaveShift);
+    }
+
+    clusterWidthLast = getClusterWidth();
+    updateOctaveRange();
+}
+
+void updateOctaveRange()
+{
+    if (getClusterWidth() < 2)
+    {
+        minOctave = -4;
+        maxOctave = 5;
+    }
+    else
+    {
+        int octStart = ((getClusterWidth() - 1) / 2);
+        minOctave = -4 + (octStart * 2);
+        maxOctave = 5 - ((octStart + (1 - (getClusterWidth() & 0x1))) * 2);
+    }
+
+    setLocalConfigItemRange (configItemId_octave, minOctave, maxOctave);
+}
+
+//==============================================================================
+void initialise()
+{
+    setLocalConfigActiveState (configItemId_midiStartChannel, true, true);
+    setLocalConfigActiveState (configItemId_midiEndChannel, true, true);
+    setLocalConfigActiveState (configItemId_midiUseMPE, true, true);
+    setLocalConfigActiveState (configItemId_octave, true, true);
+    setLocalConfigActiveState (configItemId_transpose, true, true);
+    setLocalConfigActiveState (configItemId_midiChannelRange, true, true);
+    //setLocalConfigActiveState (11, true, true);   // Only enable when pitch bend is less fatal
+    setLocalConfigActiveState (40, true, true);
+
+    setLocalConfigActiveState (10, true, true); // strike sensitivity
+    setLocalConfigActiveState (13, true, true); // press sensitivity
+    setLocalConfigActiveState (14, true, true); // lift sensitivity
+    setLocalConfigActiveState (15, true, true);
+    setLocalConfigActiveState (16, true, true);
+    //setLocalConfigActiveState (18, true, true);
+    //setLocalConfigActiveState (19, true, true);
+
+    setLocalConfigActiveState (configItemId_mode, true, true);
+    setLocalConfigActiveState (configItemId_scale, true, true);
+    //setLocalConfigActiveState (23, true, true);
+    //setLocalConfigActiveState (24, true, true);
+    //setLocalConfigActiveState (25, true, true);
+    setLocalConfigActiveState (27, true, true);
+    //setLocalConfigActiveState (28, true, true);
+    setLocalConfigActiveState (configItemId_zTrackingMode, true, true);
+    setLocalConfigActiveState (configItemId_globalKeyColour, true, true);
+    setLocalConfigActiveState (configItemId_rootKeyColour, true, true);
+    setLocalConfigActiveState (configItemId_brightness, true, true);
+
+    setLocalConfigItemRange (configItemId_octave, -4, 5);
+    setLocalConfigItemRange (configItemId_mode, 0, maxMode);
+    setLocalConfigItemRange (configItemId_scale, 0, 18);
+    setLocalConfigItemRange (24, 0, 0);//14); // Force to chord off until tested
+    setLocalConfigItemRange (configItemId_zTrackingMode, 0, 1);
+
+    fillColourTable();
+
+    minOctave = -4;
+    maxOctave = 5;
+    topOctaveShift = 255;
+    clusterWidthLast = 1;
+    currentOctave = getLocalConfig (configItemId_octave);
+    currentMode = getLocalConfig (configItemId_mode);
+    currentScale = getLocalConfig (configItemId_scale);
+    currentKey = 0;
+    currentKey = getLocalConfig (configItemId_rootKey);
+
+    updateTopologyShift();
+    checkAndModifyKeyHandlerForMode();
+
+    setLocalConfig (11, 0);	// 11 == glideSensitivity, activate/deactivate pitch-bending
+
+    currentPhysicalKeyColour = 0xffffffff;
+    currentGlobalKeyColour = getLocalConfig (configItemId_globalKeyColour);
+
+    scaleBitmask = getScaleBitmask (currentScale);
+}
+
+//==============================================================================
+void handleButtonDown (int index)
+{
+    if (index == 1)
+    {
+        setLocalConfig (configItemId_octave, --currentOctave);
+        sendConfigItemToCluster (configItemId_octave);
+    }
+
+    if (index == 2)
+    {
+        setLocalConfig (configItemId_octave, ++currentOctave);
+        sendConfigItemToCluster (configItemId_octave);
+    }
+}
+
+void handleButtonUp (int index)
+{
+    if (index == 0)
+    {
+        if (++currentMode > maxMode)
+            currentMode = 0;
+
+        setLocalConfig (configItemId_mode, currentMode);
+        sendConfigItemToCluster (configItemId_mode);
+        checkAndModifyKeyHandlerForMode();
+    }
+}
+
+//==============================================================================
+
+// nRPNs parameters
+const int nrpnOctaveRange            = 2;
+const int nrpnTranspose              = 3;
+const int nrpnMidiChannel            = 6;
+const int nrpnPhysicalKeyPressColour = 7;
+const int nrpnSetGlobalKey           = 8;
+const int nrpnSetGlobalScale         = 9;
+
+// Temporary parameters
+const int nrpnGlobalColourA = 10;
+const int nrpnGlobalColourR = 11;
+const int nrpnGlobalColourG = 12;
+const int nrpnGlobalColourB = 13;
+
+void handleRPN (bool isRegistered, int channel, int parameter, int msb, int lsb)
+{
+    // do we need to use the channel?
+    // are there registered rpns to handle?
+
+    if (isRegistered)
+    {
+    }
+    else
+    {
+        if (parameter == nrpnMidiChannel)
+        {
+            setChannel (lsb);
+        }
+        if (parameter == nrpnPhysicalKeyPressColour)
+        {
+            currentPhysicalKeyColour = colourLookup[lsb];
+        }
+        if (parameter == nrpnSetGlobalKey)
+        {
+            currentKey = lsb;
+        }
+        if (parameter == nrpnSetGlobalScale)
+        {
+            setLocalConfig (configItemId_scale, lsb);
+        }
+        if (parameter == nrpnOctaveRange)
+        {
+            setLocalConfig (configItemId_octave, lsb - 4);
+        }
+        if (parameter == nrpnTranspose)
+        {
+            setLocalConfig (configItemId_transpose, lsb);
+        }
+        if (parameter == nrpnGlobalColourA) updateGlobalColourA (integerFromRPN (msb, lsb));
+        if (parameter == nrpnGlobalColourR) updateGlobalColourR (integerFromRPN (msb, lsb));
+        if (parameter == nrpnGlobalColourG) updateGlobalColourG (integerFromRPN (msb, lsb));
+        if (parameter == nrpnGlobalColourB) updateGlobalColourB (integerFromRPN (msb, lsb));
+    }
+}
+
+//========
+int integerFromRPN (int msb, int lsb)
+{
+    // Shift then mask the most significant 7 bits, or'd with the least significant 7 bits.
+    return (((msb << 7) & 0x3f80) | (lsb & 0x7f));
+}
+
+//========
+void setChannel (int chan)
+{
+    setLocalConfig (configItemId_midiStartChannel, chan);
+    setLocalConfig (configItemId_midiEndChannel, chan);
+    setLocalConfig (configItemId_midiUseMPE, 0);
+}
+
+//========
+// Each of these with clear the 8 bits needed, then or in the new 8 bits after they're shifted into position.
+void updateGlobalColourA (int alpha)
+{
+    int mask = 0xff000000;
+    currentGlobalKeyColour = (currentGlobalKeyColour & (~ mask)) | ((alpha << 24) & mask);
+}
+void updateGlobalColourR (int red)
+{
+    int mask = 0x00ff0000;
+    currentGlobalKeyColour = (currentGlobalKeyColour & (~ mask)) | ((red << 16) & mask);
+}
+void updateGlobalColourG (int green)
+{
+    int mask = 0x0000ff00;
+    currentGlobalKeyColour = (currentGlobalKeyColour & (~ mask)) | ((green << 8) & mask);
+}
+void updateGlobalColourB (int blue)
+{
+    int mask = 0x000000ff;
+    currentGlobalKeyColour = (currentGlobalKeyColour & (~ mask)) | (blue & mask);
+}
+
+//==============================================================================
+const int midiNoteOff         = 0x8;
+const int midiNoteOn          = 0x9;
+const int midiAftertouch      = 0xa;
+const int midiChannelPressure = 0xd;
+
+void handleMIDI (int byte0, int byte1, int byte2)
+{
+    int channel = byte0 & 0xf;
+    int status = (byte0 >> 4) & 0xf;
+    int key = getKey (byte1);
+
+    if (status == midiNoteOn)
+    {
+        if (byte2 == 0) // special case, some DAWs will note off with a 0 velocity note on
+            KeyLed[key][KeyLed_virtual] = 0;
+
+        KeyLed[key][KeyLed_virtual] = colourLookup[byte2];
+    }
+    else if (status == midiNoteOff)
+    {
+        KeyLed[key][KeyLed_virtual] = 0;
+    }
+    else if (status == midiAftertouch)
+    {
+        KeyLed[key][KeyLed_brightness] = int (map (float (byte2), 0.0, 127.0, 0.0, 255.0));
+    }
+    else if (status == midiChannelPressure)
+    {
+        currentGlobalBrightness = map (float (byte2), 0.0, 127.0, 0.0, 1.0);
+    }
+}
+
+void keyStrike (int index, int z, int vz)
+{
+    KeyLed[index][KeyLed_pressed] = vz;
+
+    int note = getNote (index);
+    int chan = assignChannel (note);
+    channel[index] = chan;
+
+    sendNoteOn (chan, note, vz);
+}
+
+void keyPress (int index, int z, int vz)
+{
+    KeyLed[index][KeyLed_pressed] = z;
+
+    int note = getNote (index);
+    int chan = channel[index];
+
+    sendAftertouch (chan, note, z);
+}
+
+void keyLift (int index, int z, int vz)
+{
+    KeyLed[index][KeyLed_pressed] = 0;
+
+    int note = getNote (index);
+    int chan = channel[index];
+
+    sendNoteOff (chan, note, vz);
+    deassignChannel (note, chan);
+}
+
+//========
+int getScaleBitmask (int scale)
+{
+	if (scale == 1)        return 0xab5;  // major
+	else if (scale == 2)   return 0x5ad;  // minor
+	else if (scale == 3)   return 0x9ad;  // harmonic minor
+	else if (scale == 4)   return 0x4a5;  // pentatonic neutral
+	else if (scale == 5)   return 0x295;  // pentatonic major
+	else if (scale == 6)   return 0x4a9;  // pentatomic minor
+	else if (scale == 7)   return 0x4e9;  // blues
+	else if (scale == 8)   return 0x6ad;  // dorian
+	else if (scale == 9)   return 0x5ab;  // phrygian
+	else if (scale == 10)  return 0xad5;  // lydian
+	else if (scale == 11)  return 0x6b5;  // mixolydian
+	else if (scale == 12)  return 0x56b;  // locrian
+	else if (scale == 13)  return 0x555;  // whole tone
+	else if (scale == 14)  return 0xb6d;  // arabic (A)
+	else if (scale == 15)  return 0x575;  // arabic (B)
+	else if (scale == 16)  return 0x8d1;  // japanese
+	else if (scale == 17)  return 0x8b1;  // ryukyu
+	else if (scale == 18)  return 0x57b;  // 8-tone spanish
+	return 0xfff;                         // chromatic
+}
+
+//========
+void fillColourTable()
+{
+    // I know this is mad, don't worry, I generated it, I did't write it by hand.
+    int i = 0;
+    colourLookup[i++] = 0xff000000; colourLookup[i++] = 0xffff506f; colourLookup[i++] = 0xffff546c; colourLookup[i++] = 0xffff5869; colourLookup[i++] = 0xffff5c66; colourLookup[i++] = 0xffff6063; colourLookup[i++] = 0xffff6460; colourLookup[i++] = 0xffff695c; colourLookup[i++] = 0xffff6d59; colourLookup[i++] = 0xffff7156; colourLookup[i++] = 0xffff7553; colourLookup[i++] = 0xffff7950; colourLookup[i++] = 0xffff7d4d; colourLookup[i++] = 0xffff814a; colourLookup[i++] = 0xffff8547; colourLookup[i++] = 0xffff8944; colourLookup[i++] = 0xffff8d41; colourLookup[i++] = 0xffff923d; colourLookup[i++] = 0xffff963a; colourLookup[i++] = 0xffff9a37; colourLookup[i++] = 0xffff9e34; colourLookup[i++] = 0xffffa231; colourLookup[i++] = 0xffffa62e; colourLookup[i++] = 0xffffaa2e; colourLookup[i++] = 0xffffae2d; colourLookup[i++] = 0xffffb12d; colourLookup[i++] = 0xffffb52c; colourLookup[i++] = 0xffffb92c; colourLookup[i++] = 0xffffbd2b; colourLookup[i++] = 0xffffc12b; colourLookup[i++] = 0xffffc42b; colourLookup[i++] = 0xffffc82a; colourLookup[i++] = 0xffffcc2a; colourLookup[i++] = 0xffffd029; colourLookup[i++] = 0xffffd429; colourLookup[i++] = 0xffffd828; colourLookup[i++] = 0xffffdb28; colourLookup[i++] = 0xffffdf28; colourLookup[i++] = 0xffffe327; colourLookup[i++] = 0xffffe727; colourLookup[i++] = 0xffffeb26; colourLookup[i++] = 0xffffee26; colourLookup[i++] = 0xfffff225; colourLookup[i++] = 0xfffff625; colourLookup[i++] = 0xfff7f62a; colourLookup[i++] = 0xfff0f72e; colourLookup[i++] = 0xffe8f733; colourLookup[i++] = 0xffe1f837; colourLookup[i++] = 0xffd9f83c; colourLookup[i++] = 0xffd1f841; colourLookup[i++] = 0xffcaf945; colourLookup[i++] = 0xffc2f94a; colourLookup[i++] = 0xffbaf94f; colourLookup[i++] = 0xffb3fa53; colourLookup[i++] = 0xffabfa58; colourLookup[i++] = 0xffa4fb5c; colourLookup[i++] = 0xff9cfb61; colourLookup[i++] = 0xff94fb66; colourLookup[i++] = 0xff8dfc6a; colourLookup[i++] = 0xff85fc6f; colourLookup[i++] = 0xff7dfc74; colourLookup[i++] = 0xff76fd78; colourLookup[i++] = 0xff6efd7d; colourLookup[i++] = 0xff67fe81; colourLookup[i++] = 0xff5ffe86; colourLookup[i++] = 0xff5cfc8b; colourLookup[i++] = 0xff59fa8f; colourLookup[i++] = 0xff56f894; colourLookup[i++] = 0xff53f698; colourLookup[i++] = 0xff50f49d; colourLookup[i++] = 0xff4df2a2; colourLookup[i++] = 0xff4af0a6; colourLookup[i++] = 0xff47eeab; colourLookup[i++] = 0xff44ecb0; colourLookup[i++] = 0xff41eab4; colourLookup[i++] = 0xff3ee9b9; colourLookup[i++] = 0xff3be7bd; colourLookup[i++] = 0xff38e5c2; colourLookup[i++] = 0xff35e3c7; colourLookup[i++] = 0xff32e1cb; colourLookup[i++] = 0xff2fdfd0; colourLookup[i++] = 0xff2cddd5; colourLookup[i++] = 0xff29dbd9; colourLookup[i++] = 0xff26d9de; colourLookup[i++] = 0xff23d7e2; colourLookup[i++] = 0xff20d5e7; colourLookup[i++] = 0xff23d0e8; colourLookup[i++] = 0xff26cbe9; colourLookup[i++] = 0xff29c6ea; colourLookup[i++] = 0xff2cc1ec; colourLookup[i++] = 0xff2fbced; colourLookup[i++] = 0xff32b7ee; colourLookup[i++] = 0xff35b2ef; colourLookup[i++] = 0xff38adf0; colourLookup[i++] = 0xff3ba8f1; colourLookup[i++] = 0xff3ea3f2; colourLookup[i++] = 0xff409ff4; colourLookup[i++] = 0xff439af5; colourLookup[i++] = 0xff4695f6; colourLookup[i++] = 0xff4990f7; colourLookup[i++] = 0xff4c8bf8; colourLookup[i++] = 0xff4f86f9; colourLookup[i++] = 0xff5281fa; colourLookup[i++] = 0xff557cfc; colourLookup[i++] = 0xff5877fd; colourLookup[i++] = 0xff5b72fe; colourLookup[i++] = 0xff5e6dff; colourLookup[i++] = 0xff616bfe; colourLookup[i++] = 0xff6469fd; colourLookup[i++] = 0xff6767fc; colourLookup[i++] = 0xff6b64fb; colourLookup[i++] = 0xff6e62fa; colourLookup[i++] = 0xff7160f9; colourLookup[i++] = 0xff745ef8; colourLookup[i++] = 0xff775cf7; colourLookup[i++] = 0xff7a5af6; colourLookup[i++] = 0xff7e58f5; colourLookup[i++] = 0xff8155f3; colourLookup[i++] = 0xff8453f2; colourLookup[i++] = 0xff8751f1; colourLookup[i++] = 0xff8a4ff0; colourLookup[i++] = 0xff8d4def; colourLookup[i++] = 0xff904bee; colourLookup[i++] = 0xff9448ed; colourLookup[i++] = 0xff9746ec; colourLookup[i++] = 0xff9a44eb; colourLookup[i++] = 0xff9d42ea; colourLookup[i++] = 0xffffffff;
+}
+
+//========
+void setDefaultColoursBasedOnScale()
+{
+    int note = getBaseNoteNumber();
+    for (int key = 0; key < numKeys; ++key)
+        KeyLed[key][KeyLed_default] = getDefaultKeyColour(note + key);
+}
+
+//========
+int getKey (int note)
+{
+    int baseNoteNumber = 48 + ((currentOctave + getLocalConfig (configItemId_octaveTopology)) * 12);
+
+    if (note < baseNoteNumber || note >= (baseNoteNumber + 24))
+        return -1;
+
+    return note - baseNoteNumber;
+}
+
+//========
+bool isNoteInScale (int note)
+{
+    int key = getKey (note);
+
+    if (key < 0 || key > 24)
+        return false;
+
+    int mask = 1 << mod (key, 12);  // scaleMask has only 12 keys (one octave)
+
+    return (mask & scaleBitmask) != 0;
+}
+
+//========
+int getDefaultKeyColour (int note)
+{
+    if (! isNoteInScale (note))
+        return 0xff000000;
+
+    return currentGlobalKeyColour;
+}
+
+//========
+int getNote (int key)
+{
+    return getBaseNoteNumber() + key;
+}
+
+//========
+int getBaseNoteNumber()
+{
+    return 48 + ((currentOctave + getLocalConfig (configItemId_octaveTopology)) * 12);
+}
+
+//==============================================================================
+void displayKeys()
+{
+    for (int key = 0; key < numKeys; ++key)
+    {
+        // should pressed key, or virtual, otherwise default
+        int colour = (KeyLed[key][KeyLed_pressed] != 0) ? currentPhysicalKeyColour
+                   : (KeyLed[key][KeyLed_virtual] != 0) ? KeyLed[key][KeyLed_virtual]
+                   : KeyLed[key][KeyLed_default];
+
+        int alpha = int (float (KeyLed[key][KeyLed_brightness]) * currentGlobalBrightness);
+        colour = (colour & 0x00ffffff) | (alpha << 24);
+
+        fillPixel (colour, key, 0);
+    }
+}
+
+//========
+void displayOctaveButtons()
+{
+    if (currentOctave > minOctave)
+        fillPixel (0xffffffff, 0, 1);
+    else
+        fillPixel (0, 0, 1);
+
+    if (currentOctave < maxOctave)
+        fillPixel (0xffffffff, 1, 1);
+    else
+        fillPixel (0, 1, 1);
+}
+
+//==============================================================================
+void checkAndModifyKeyHandlerForMode()
+{
+    //if (currentMode == 4)
+    //    setUseDefaultKeyHandler (false);
+    //else
+        setUseDefaultKeyHandler (true);
+}
