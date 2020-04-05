@@ -3,6 +3,13 @@ To be used with WebMidi. Note that sysex commands can only be sent if website is
 Also, you need to use a WebMidi enabled browser.
 */
 
+var lumi = {
+  input: null,
+  output: null,
+  octave_start: 48,
+  mode: 0,
+}
+
 function checksum(values) {
   var sum = values.length;
   for(var i = 0; i < values.length; i++) {
@@ -39,10 +46,9 @@ function BitArray() {
 }
 
 function send_sysex(values) {
-  var output = WebMidi.outputs[1];
   values = [0x77, 0x37].concat(values).concat([checksum(values)]);
   log('SEND ' + values.map((e) => e.toString(16)).join(' '));
-  output.sendSysex([0x00, 0x21, 0x10], values);
+  lumi.output.sendSysex([0x00, 0x21, 0x10], values);
 }
 
 function set_color(id, red, green, blue) {
@@ -54,7 +60,7 @@ function set_color(id, red, green, blue) {
   bits.append(parseInt(green) & 0xff, 8);
   bits.append(parseInt(red) & 0xff, 8);
   bits.append(0b11111111, 8);
-  send_config(bits.get());
+  send_sysex(bits.get());
 }
 
 function set_brightness(value) {
@@ -63,7 +69,7 @@ function set_brightness(value) {
   bits.append(0x40, 7);
   bits.append(0b00100, 5);
   bits.append(value, 7);
-  send_config(bits.get());
+  send_sysex(bits.get());
 }
 
 function set_channel(value) {
@@ -72,16 +78,17 @@ function set_channel(value) {
   bits.append(0x00, 7);
   bits.append(0b00000, 5);
   bits.append(value, 32);
-  send_config(bits.get());
+  send_sysex(bits.get());
 }
 
 function set_octave(value) {
+  lumi.octave_start = value * 12 + 48;
   var bits = new BitArray();
   bits.append(0x10, 7);
   bits.append(0x40, 7);
   bits.append(0b00000, 5);
   bits.append(value, 32);
-  send_config(bits.get());
+  send_sysex(bits.get());
 }
 
 function set_transpose(value) {
@@ -90,7 +97,7 @@ function set_transpose(value) {
   bits.append(0x50, 7);
   bits.append(0b00000, 5);
   bits.append(value, 32);
-  send_config(bits.get());
+  send_sysex(bits.get());
 }
 
 function set_strike_sensitivity(value) {
@@ -99,7 +106,7 @@ function set_strike_sensitivity(value) {
   bits.append(0x20, 7);
   bits.append(0b00001, 5);
   bits.append(value, 7);
-  send_config(bits.get());
+  send_sysex(bits.get());
 }
 
 function set_sensitivity(value) {
@@ -108,7 +115,7 @@ function set_sensitivity(value) {
   bits.append(0x50, 7);
   bits.append(0b00001, 5);
   bits.append(value, 7);
-  send_config(bits.get());
+  send_sysex(bits.get());
 }
 
 function set_fixed_velocity(value) {
@@ -117,7 +124,7 @@ function set_fixed_velocity(value) {
   bits.append(0x70, 7);
   bits.append(0b00001, 5);
   bits.append(value ? 1 : 0, 1);
-  send_config(bits.get());
+  send_sysex(bits.get());
 }
 
 function set_fixed_velocity_value(value) {
@@ -126,7 +133,7 @@ function set_fixed_velocity_value(value) {
   bits.append(0x00, 7);
   bits.append(0b00010, 5);
   bits.append(value, 7);
-  send_config(bits.get());
+  send_sysex(bits.get());
 }
 
 function set_color_mode(value) {
@@ -135,6 +142,43 @@ function set_color_mode(value) {
   bits.append(0x40, 7);
   bits.append(0b00010, 5);
   bits.append(parseInt(value) & 3, 2);
-  send_config(bits.get());
+  send_sysex(bits.get());
 }
 
+function set_scale(name) {
+  var scales = {
+    'major': [0x10, 0x60, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00], // major
+    'minor': [0x10, 0x60, 0x22, 0x00, 0x00, 0x00, 0x00, 0x00], // minor
+    'harmonic minor': [0x10, 0x60, 0x42, 0x00, 0x00, 0x00, 0x00, 0x00], // harmonic minor
+    'chromatic': [0x10, 0x60, 0x42, 0x04, 0x00, 0x00, 0x00, 0x00], // chromatic
+    'pentatonic neutral': [0x10, 0x60, 0x62, 0x00, 0x00, 0x00, 0x00, 0x00], // pentatonic neutral
+    'pentatonic major': [0x10, 0x60, 0x02, 0x01, 0x00, 0x00, 0x00, 0x00], // pentatonic major
+    'pentatonic minor': [0x10, 0x60, 0x22, 0x01, 0x00, 0x00, 0x00, 0x00], // pentatonic minor
+    'blues': [0x10, 0x60, 0x42, 0x01, 0x00, 0x00, 0x00, 0x00], // blues
+    'dorian': [0x10, 0x60, 0x62, 0x01, 0x00, 0x00, 0x00, 0x00], // dorian
+    'phrygian': [0x10, 0x60, 0x02, 0x02, 0x00, 0x00, 0x00, 0x00], // phrygian
+    'lydian': [0x10, 0x60, 0x22, 0x02, 0x00, 0x00, 0x00, 0x00], // lydian
+    'mixolydian': [0x10, 0x60, 0x42, 0x02, 0x00, 0x00, 0x00, 0x00], // mixolydian
+    'locrian': [0x10, 0x60, 0x62, 0x02, 0x00, 0x00, 0x00, 0x00], // locrian
+    'whole tone': [0x10, 0x60, 0x02, 0x03, 0x00, 0x00, 0x00, 0x00], // whole tone
+    'arabic (a)': [0x10, 0x60, 0x22, 0x02, 0x00, 0x00, 0x00, 0x00], // arabic (a)
+    'arabic (b)': [0x10, 0x60, 0x42, 0x03, 0x00, 0x00, 0x00, 0x00], // arabic (b)
+    'japanese': [0x10, 0x60, 0x62, 0x03, 0x00, 0x00, 0x00, 0x00], // japanese
+    'ryukyu': [0x10, 0x60, 0x02, 0x04, 0x00, 0x00, 0x00, 0x00], // ryukyu
+    '8-tone spanish': [0x10, 0x60, 0x22, 0x04, 0x00, 0x00, 0x00, 0x00], // 8-tone spanish
+    'chromatic': [0x10, 0x60, 0x42, 0x04, 0x00, 0x00, 0x00, 0x00], // chromatic
+  };
+  name = name.trim().toLowerCase();
+  if(name in scales) {
+    send_sysex(scales[name]);
+  } else {
+    log("unknown scale " + name);
+  }
+}
+
+function set_key(key) {
+}
+
+function reset_lumi() {
+  lumi.output.sendSysex([0x00, 0x21, 0x10], [0x78, 0x3f]);
+}
