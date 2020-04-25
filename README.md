@@ -11,4 +11,7 @@ It is distributed in the resources of ROLI Dashboard.
 There is a `lumi_sysex.js` library which contains a few functions to control basic behaviour of the keyboard
 and an example index.html file which showcases how to use the library.
 
-The demo can be tried at https://benob.github.io/LUMI-lights/. It requires that your LUMI is identified as device 37 and that it is the second midi device on the host (the default on linux). 
+The demo can be tried at https://benob.github.io/LUMI-lights/. It was only tested with a signle LUMI block (no other blocks attached).
+
+Notes:
+- to compile and send a different littlefoot program, you can use https://github.com/agraef/myblocks
