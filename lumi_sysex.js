@@ -1,6 +1,6 @@
 /* preliminary implementation of sysex library for LUMI 
 To be used with WebMidi. Note that sysex commands can only be sent if website is https.
-Also, you need to use a WebMidi enabled browser.
+Also, you need to use a WebMidi enabled browser such as chromium.
 */
 
 var lumi = {

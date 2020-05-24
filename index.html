@@ -15,7 +15,7 @@
         </select>
         Block:
         <select id="block">
-          <option name="">TODO</option>
+          <option name="">no implemented yet</option>
         </select>
       </p>
 
@@ -86,7 +86,7 @@
 
       <p>
         <label for="scale">Scale</label>
-        <select id="scale" oninput="set_scale(scale.value)">>
+        <select id="scale" oninput="set_scale(scale.value)">
           <option value="major">Major</option>
           <option value="minor">Minor</option>
           <option value="harmonic minor">Harmonic minor</option>
@@ -206,6 +206,11 @@ function make_keyboard() {
 function select_device(name) {
   lumi.output = WebMidi.getOutputByName(name);
   lumi.input = WebMidi.getInputByName(name);
+	if (lumi.input) {
+		lumi.input.addListener('sysex', 'all', (event) => {
+				log('RECV: ' + event.timestamp + ' ' + event.data.map((value) => value.toString(16).toUpperCase()).join(' '));
+			});
+	}
   log("device = " + lumi.output.name);
 }
 
