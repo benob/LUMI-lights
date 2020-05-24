@@ -47,7 +47,7 @@ function BitArray() {
 
 function send_sysex(values) {
   values = [0x77, 0x37].concat(values).concat([checksum(values)]);
-  log('SEND ' + values.map((e) => e.toString(16)).join(' '));
+  log('SEND ' + Array.from(values).map((e) => ('0' + e.toString(16)).slice(-2).toUpperCase()).join(' '));
   lumi.output.sendSysex([0x00, 0x21, 0x10], values);
 }
 
@@ -179,6 +179,12 @@ function set_scale(name) {
 function set_key(key) {
 }
 
-function reset_lumi() {
+function query_serial() {
+  log('SEND 78 3F');
   lumi.output.sendSysex([0x00, 0x21, 0x10], [0x78, 0x3f]);
+}
+
+function send_reset() {
+  log('SEND 77 00 01 01 00 5D');
+  lumi.output.sendSysex([0x00, 0x21, 0x10], [0x77, 0x00, 0x01, 0x01, 0x00, 0x5D]);
 }

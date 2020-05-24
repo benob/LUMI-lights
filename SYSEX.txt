@@ -20,18 +20,25 @@ checksum(bytes, size):
     c = (c * 3 + b) & 0xff 
   return c & 0x7f
 
+command: get product serial
+# see https://github.com/WeAreROLI/JUCE/blob/724ae27c71ef809b836df06713cf9e50bc14162b/modules/juce_blocks_basics/topology/internal/juce_BlockSerialReader.cpp
+F0 00 21 10 78 3F
+=> returns sequence of 224 bytes starting in F0 00 21 10 77 <78>...
+
+command: list blocks? reset?
+F0 00 21 10 77 00 01 01 00 5D
+=> returns sequence of 48 bytes, then 15 bytes starting in F0 00 21 10 77 <77> <00>...
+
 In the following, we assume a prefix (sysex byte, ROLI manufacturer, LUMI device) and a suffix (checksum, sysex end byte):
 F0 00 21 10 77 37 <command-bytes> ?? F7
 
-command: list blocks? (on device 00)
-01 01 00
-
 command: battery level?
 01 03 00
+=> returns sequences of 48 then 15 bytes starting in F0 00 21 10 77 <77> <00>...
 
-command: get product serial
-# see https://github.com/WeAreROLI/JUCE/blob/724ae27c71ef809b836df06713cf9e50bc14162b/modules/juce_blocks_basics/topology/internal/juce_BlockSerialReader.cpp
-78 
+command: read configuration? only works right after (list blocks)
+10 02
+=> returns sequence of 162 then 128 bytes starting in F0 00 21 10 77 <77> <00>...
 
 command: change color 1 (global key color)
 10 20 [color] 03

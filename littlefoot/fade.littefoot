@@ -1,0 +1,54 @@
+const int numKeys = 24;
+
+int channel[numKeys]; 
+int intensity[numKeys];
+int pressed[numKeys];
+
+const int max = 64;
+
+void initialise() {
+  fillRect(0x00000000, 0, 0, 24, 1);
+}
+
+void keyStrike (int index, int z, int vz) {
+  pressed[index] = 1;
+
+  int note = getNote (index);
+  int chan = assignChannel (note);
+  channel[index] = chan;
+
+  sendNoteOn (chan, note, vz);
+}
+
+void keyPress (int index, int z, int vz)
+{
+    int note = getNote (index);
+    int chan = channel[index];
+
+    sendAftertouch (chan, note, z);
+}
+
+void keyLift (int index, int z, int vz)
+{
+    pressed[index] = 0;
+    int note = getNote (index);
+    int chan = channel[index];
+
+    sendNoteOff (chan, note, vz);
+    deassignChannel (note, chan);
+}
+
+int getNote(int index) {
+  return 48 + 0 * 12 + index;
+}
+
+void repaint() {
+  for(int i = 0; i < numKeys; i++) {
+    if(pressed[i]) intensity[i] = 192;
+    if(intensity[i] > 0) {
+      intensity[i] = intensity[i] - 8;
+      if(intensity[i] < 0) intensity[i] = 0;
+    }
+    fillPixel(makeARGB(255, intensity[i], 0, intensity[i]), i, 0);
+  }
+}
