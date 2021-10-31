@@ -46,7 +46,7 @@ function BitArray() {
 }
 
 function send_sysex(values) {
-  values = [0x77, 0x37].concat(values).concat([checksum(values)]);
+  values = [0x77, 0x30].concat(values).concat([checksum(values)]);
   log('SEND ' + Array.from(values).map((e) => ('0' + e.toString(16)).slice(-2).toUpperCase()).join(' '));
   lumi.output.sendSysex([0x00, 0x21, 0x10], values);
 }
