@@ -22,7 +22,7 @@ function BitArray() {
   this.values = [];
   this.num_bits = 0;
   this.append = function(value, size = 7) {
-    var current = parseInt(this.num_bits / 7);
+    //var current = parseInt(this.num_bits / 7);
     var used_bits = parseInt(this.num_bits % 7);
     var packed = 0;
     if(used_bits > 0) {
@@ -39,7 +39,7 @@ function BitArray() {
       used_bits = 0;
     }
   }
-  this.get = function(size = 32) {
+  this.get = function(/*size = 32*/) {
     while(this.values.length < 8) this.values.push(0);
     return this.values;
   }
@@ -150,7 +150,6 @@ function set_scale(name) {
     'major': [0x10, 0x60, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00], // major
     'minor': [0x10, 0x60, 0x22, 0x00, 0x00, 0x00, 0x00, 0x00], // minor
     'harmonic minor': [0x10, 0x60, 0x42, 0x00, 0x00, 0x00, 0x00, 0x00], // harmonic minor
-    'chromatic': [0x10, 0x60, 0x42, 0x04, 0x00, 0x00, 0x00, 0x00], // chromatic
     'pentatonic neutral': [0x10, 0x60, 0x62, 0x00, 0x00, 0x00, 0x00, 0x00], // pentatonic neutral
     'pentatonic major': [0x10, 0x60, 0x02, 0x01, 0x00, 0x00, 0x00, 0x00], // pentatonic major
     'pentatonic minor': [0x10, 0x60, 0x22, 0x01, 0x00, 0x00, 0x00, 0x00], // pentatonic minor
