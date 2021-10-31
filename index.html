@@ -4,6 +4,7 @@
     <script src='https://cwilso.github.io/WebMIDIAPIShim/build/WebMIDIAPI.min.js'></script>
     <script src="https://cdn.jsdelivr.net/npm/webmidi"></script>
     <script src="lumi_sysex.js"></script>
+    <title>LUMI sysex commands</title>
   </head>
   <body>
     <h1> LUMI sysex commands </h1>
@@ -70,7 +71,7 @@
 
       <p>
         <label for="fixed_velocity">Fixed velocity value</label>
-        <input id="fixed_velocity" type="range" value="127" min="0" max="127" oninput="set_fixed_velocity_value(fixed_velocity_value.value = fixed_velocity.value)">
+        <input id="fixed_velocity_range" type="range" value="127" min="0" max="127" oninput="set_fixed_velocity_value(fixed_velocity_value.value = fixed_velocity_range.value)">
         <output id="fixed_velocity_value" for="fixed_velocity">0</output>
       </p>
 
@@ -110,7 +111,7 @@
       </p>
 
       <p>
-        <label for="key">TODO: Key</label>
+        <label for="key">Key</label>
         <select id="key" oninput="set_key(event.target.value)">
           <option value="C">C</option>
           <option value="C#">C#</option>
@@ -128,15 +129,15 @@
       </p>
 
       <p>
-        <label for="pressure_tracking_mode">TODO: Pressure tracking mode</label>
-        <select id="pressure_tracking_mode" oninput="set_pressure_tracking_mode(pressure_tracking_mode.value)">
-          <option value="0"> Poly aftertouch </option>
-          <option value="1"> Channel pressure </option>
+        <label for="pressure_tracking_mode">Pressure tracking mode</label>
+        <select id="pressure_tracking_mode" oninput="set_pressure_tracking_mode(event.target.value)">
+          <option value="0"> Poly aftertouch</option>
+          <option value="1"> Channel pressure</option>
         </select>
       </p>
 
       <p>
-        Custom command: F0 00 21 10 77 37 <input type="text" id="command" oninput="checksum.value = update_checksum(command.value)"> <span id="checksum">??</span> F7 <button type="button" onclick="run_command(command.value); return false;">Run</button>
+        Custom command: F0 00 21 10 77 30 <input type="text" id="command" oninput="checksum.value = update_checksum(command.value)"> <span id="checksum">??</span> F7 <button type="button" onclick="run_command(command.value); return false;">Run</button>
       </p>
 
       <p>
@@ -160,7 +161,7 @@ function log(message) {
 function make_keyboard() {
   var keyboard = document.getElementById('keyboard');
   var offset = 0;
-  var key_num = 0;
+  //var key_num = 0;
   var minor = [1, 3, 6, 8, 10, 13, 15, 18, 20, 22];
   for(var i = 0; i < 24; i++) {
     var key = document.createElement('div');
